@@ -3,21 +3,16 @@ import re
 import httpx
 import os
 from dotenv import load_dotenv
-
-load_dotenv()
 from openai import OpenAI
+from tavily import TavilyClient
 
-# add your API key in a .env file
+load_dotenv() 
+
 client = OpenAI()
+# connect
+tavily_client = TavilyClient("tvly-*****")   # Update with your key
 
-"""
-chat_completion = client.chat.completions.create(
-    model="gpt-4.1-nano",
-    messages=[{"role": "user", "content": "Hello chatgpt, which model are you?"}]
-)
 
-print(chat_completion.choices[0].message.content)
-"""
 
 system_prompt = """
 You run in a loop of Thought, Action, PAUSE, Observation.
@@ -25,6 +20,7 @@ At the end of the loop you output an Answer
 Use Thought to describe your thoughts about the question you have been asked.
 Use Action to run one of the actions available to you - then return PAUSE.
 Observation will be the result of running those actions.
+CRITICAL: You must always format your actions as 'Action: tool_name: input'
 
 Your available actions are:
 
@@ -35,6 +31,11 @@ Runs a calculation and returns the number - uses Python so be sure to use floati
 average_dog_weight:
 e.g. average_dog_weight: Collie
 returns average weight of a dog when given the breed
+
+tavily_search:
+Given a user question this tool fetches information form the internet
+e.g. What is the weather in Munich
+returns: data related to the current weather from a particular place or location,  here for Munich
 
 Example session:
 
@@ -73,17 +74,9 @@ class Agent:
                         messages=self.messages)
         return completion.choices[0].message.content
     
-#  Tool No. 1 #  "1+1"
+#  Tool No. 1 #  "1+1" 5*7
 def calculate(what):
     return eval(what)
-
-def wikipedia(q):
-    return httpx.get("https://en.wikipedia.org/w/api.php", params={
-        "action": "query",
-        "list": "search",
-        "srsearch": q,
-        "format": "json"
-    }).json()["query"]["search"][0]["snippet"]
 
 #  Tool No. 2
 def average_dog_weight(name):
@@ -95,17 +88,23 @@ def average_dog_weight(name):
         return("a toy poodles average weight is 7 lbs")
     else:
         return("An average dog weights 50 lbs")
+
+#  Tool No. 3
+def tavily_search(question):
+    return tavily_client.search(
+    query=question,
+    search_depth="advanced"
+)
     
 
 known_actions = {
     "calculate": calculate,
     "average_dog_weight": average_dog_weight,
-    "wikipedia": wikipedia,
+    "tavily_search": tavily_search,
 }
 
-
-action_re = re.compile(r'^Action: (\w+): (.*)$')   # python regular expression to selection action
-
+# This version is case-insensitive and handles trailing whitespace or extra colons
+action_re = re.compile(r'Action:\s*(\w+):\s*(.*)', re.IGNORECASE)
 
         
 def query(question, max_turns =5):
@@ -123,6 +122,7 @@ def query(question, max_turns =5):
             for a in result.split('\n') 
             if action_re.match(a)
         ]
+
         if actions:
             # There is an action to run
             action, action_input = actions[0].groups()
@@ -138,10 +138,11 @@ def query(question, max_turns =5):
         else:
             return
         
+#query("How much does a toy poodle weigh?")
 
-query("look up wiki to find the box office collection of the movie durandhar")
+#query("find the box office collection of the movie durandhar 2")
 
+query("find today weather of Munich and Bangalore")
 #abot = Agent(system_prompt)
 
-#result = abot("How much does a toy poodle weigh?")
-#print(result)
+
